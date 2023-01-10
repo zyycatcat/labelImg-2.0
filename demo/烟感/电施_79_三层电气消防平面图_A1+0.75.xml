@@ -1,0 +1,26 @@
+<annotation>
+	<folder>烟感</folder>
+	<filename>电施_79_三层电气消防平面图_A1+0.75.jpg</filename>
+	<path>D:\个人\研二\标注图纸\labelImg_ljp\demo\烟感\电施_79_三层电气消防平面图_A1+0.75.jpg</path>
+	<source>
+		<database>Unknown</database>
+	</source>
+	<size>
+		<width>23183</width>
+		<height>9356</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>烟感</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>1</difficult>
+		<bndbox>
+			<xmin>7479</xmin>
+			<ymin>1660</ymin>
+			<xmax>7542</xmax>
+			<ymax>1724</ymax>
+		</bndbox>
+	</object>
+</annotation>

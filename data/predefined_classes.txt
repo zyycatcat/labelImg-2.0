@@ -1,0 +1,14 @@
+light
+floor
+arrow
+exit
+safe
+double_door
+single_door
+sliding_door
+window
+pillar
+elevator
+stair
+parking
+evacuation
