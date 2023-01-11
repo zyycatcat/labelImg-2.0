@@ -104,7 +104,7 @@ def bbox_IOU(bbox_a, bbox_b):
 def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False, filter_list=None, thresh=0.8):
     if filter_list is None:
         filter_list = template_list
-    tag_cood_tuple_list = template_list.copy()
+    tag_cood_tuple_list = []
     img = cn_imread(img_path)
     img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 获取灰度图
     for temp in template_list:
@@ -121,12 +121,15 @@ def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False,
             bottom_right = (pt[0] + template.shape[1], pt[1] + template.shape[0])
             target_bbox = [pt[0], pt[1], bottom_right[0], bottom_right[1]]
             is_duplicate = False
+            print('###############')
             for old_tag in filter_list + tag_cood_tuple_list:
+                print(old_tag)
                 if bbox_IOU(old_tag[1], target_bbox) > 0.9:
                     is_duplicate = True
                     break
             if not is_duplicate:  # 跳过重复的检测框
                 tag_cood_tuple_list.append([tag_name, target_bbox, 0])
+                print('match: [{}, {}]'.format(tag_name, target_bbox))
                 if dump_flag:
                     cv2.rectangle(img, pt, bottom_right, (0, 0, 255), 3)
         if dump_flag:

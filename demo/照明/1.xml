@@ -24,7 +24,7 @@
 		</bndbox>
 	</object>
 	<object>
-		<name>floor</name>
+		<name>arrow</name>
 		<pose>Unspecified</pose>
 		<truncated>0</truncated>
 		<difficult>1</difficult>
@@ -33,6 +33,30 @@
 			<ymin>1381</ymin>
 			<xmax>1766</xmax>
 			<ymax>1463</ymax>
+		</bndbox>
+	</object>
+	<object>
+		<name>arrow</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>1</difficult>
+		<bndbox>
+			<xmin>1737</xmin>
+			<ymin>2454</ymin>
+			<xmax>1766</xmax>
+			<ymax>2535</ymax>
+		</bndbox>
+	</object>
+	<object>
+		<name>arrow</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<bndbox>
+			<xmin>2267</xmin>
+			<ymin>2074</ymin>
+			<xmax>2346</xmax>
+			<ymax>2101</ymax>
 		</bndbox>
 	</object>
 </annotation>
