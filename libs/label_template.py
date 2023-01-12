@@ -101,7 +101,7 @@ def bbox_IOU(bbox_a, bbox_b):
 
 
 # 根据模板匹配，获取其它同类型的标注
-def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False, filter_list=None, thresh=0.8):
+def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False, filter_list=None, thresh=0.8, multi_angle=True):
     if template_list is None or len(template_list) < 1:
         return []
     if filter_list is None:
@@ -112,27 +112,30 @@ def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False,
     for temp in template_list:
         tag_name = temp[0]
         coor = temp[1]
-        template = img_gray[coor[1]: coor[3], coor[0]: coor[2]]
-        template = cv2.resize(template, dsize=None, fx=1, fy=1)
-        result = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF_NORMED)
-        loc = np.where(result >= thresh)
-        pts = []
-        for pt in zip(*loc[::-1]):
-            pts.append([pt[0], pt[1]])
-        for pt in pts:
-            bottom_right = (pt[0] + template.shape[1], pt[1] + template.shape[0])
-            target_bbox = [pt[0], pt[1], bottom_right[0], bottom_right[1]]
-            is_duplicate = False
-            for old_tag in filter_list + tag_cood_tuple_list:
-                print(old_tag)
-                if bbox_IOU(old_tag[1], target_bbox) > 0.9:
-                    is_duplicate = True
-                    break
-            if not is_duplicate:  # 跳过重复的检测框
-                tag_cood_tuple_list.append([tag_name, target_bbox, 0])
-                # print('match: [{}, {}]'.format(tag_name, target_bbox))
-                if dump_flag:
-                    cv2.rectangle(img, pt, bottom_right, (0, 0, 255), 3)
+        img_t = img_gray[coor[1]: coor[3], coor[0]: coor[2]]
+        templates = [img_t]
+        if multi_angle:     # 多角度匹配
+            templates.extend([np.rot90(img_t, 1), np.rot90(img_t, 2), np.rot90(img_t, 3)])
+        for template in templates:
+            template = cv2.resize(template, dsize=None, fx=1, fy=1)
+            result = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF_NORMED)
+            loc = np.where(result >= thresh)
+            pts = []
+            for pt in zip(*loc[::-1]):
+                pts.append([pt[0], pt[1]])
+            for pt in pts:
+                bottom_right = (pt[0] + template.shape[1], pt[1] + template.shape[0])
+                target_bbox = [pt[0], pt[1], bottom_right[0], bottom_right[1]]
+                is_duplicate = False
+                for old_tag in filter_list + tag_cood_tuple_list:
+                    if bbox_IOU(old_tag[1], target_bbox) > 0.9:
+                        is_duplicate = True
+                        break
+                if not is_duplicate:  # 跳过重复的检测框
+                    tag_cood_tuple_list.append([tag_name, target_bbox, 0])
+                    # print('match: [{}, {}]'.format(tag_name, target_bbox))
+                    if dump_flag:
+                        cv2.rectangle(img, pt, bottom_right, (0, 0, 255), 3)
         if dump_flag:
             cn_imwrite(img_path[:-4] + '_debug.jpg', img)
     return tag_cood_tuple_list

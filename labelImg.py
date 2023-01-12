@@ -132,6 +132,8 @@ class MainWindow(QMainWindow, WindowMixin):
         self.diffcButton = QCheckBox('将当前构件用作模板匹配')
         self.diffcButton.setChecked(False)
         self.diffcButton.stateChanged.connect(self.btnstate)
+        self.angleButton = QCheckBox('自动构造多方向模板')
+        self.angleButton.setChecked(True)
         self.editButton = QToolButton()
         self.editButton.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.autoLabelButton = QToolButton()
@@ -152,6 +154,7 @@ class MainWindow(QMainWindow, WindowMixin):
         listLayout.addWidget(self.editButton)
         listLayout.addWidget(self.autoLabelButton)
         listLayout.addWidget(self.diffcButton)
+        listLayout.addWidget(self.angleButton)
         listLayout.addWidget(self.slider)
         listLayout.addWidget(self.threshLabel)
         listLayout.addWidget(useDefaultLabelContainer)
@@ -717,12 +720,12 @@ class MainWindow(QMainWindow, WindowMixin):
             self.updateComboBox()
 
     def autoLabel(self):
-        self.autoLabelButton.setDisabled(True)
         print('debug# autoLabel', self.filePath)
         print('debug# image shape(w, h) =', self.image.width(), self.image.height())
         if self.filePath is None or not self.canvas.editing():
             print('Warning: filePath is None!')
             return
+        self.autoLabelButton.setDisabled(True)
         template_list = []
         all_tag_list = []
         for i in range(self.labelList.count()):
@@ -745,7 +748,8 @@ class MainWindow(QMainWindow, WindowMixin):
             if shape.difficult:
                 template_list.append([shape.label, [int(xmin), int(ymin), int(xmax), int(ymax)], shape.difficult])
         print('debug#', template_list)
-        tag_cood_tuple_list = get_tag_cood_tuple_list(template_list, self.filePath, filter_list=all_tag_list, thresh=self.matchThresh)
+        tag_cood_tuple_list = get_tag_cood_tuple_list(template_list, self.filePath, filter_list=all_tag_list,
+                                                      thresh=self.matchThresh, multi_angle=(self.angleButton.checkState() != 0))
         shapes = self.canvas.shapes
         for new_tag in tag_cood_tuple_list:
             new_shape = Shape(label=new_tag[0])
