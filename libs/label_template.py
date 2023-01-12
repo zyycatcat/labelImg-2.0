@@ -102,6 +102,8 @@ def bbox_IOU(bbox_a, bbox_b):
 
 # 根据模板匹配，获取其它同类型的标注
 def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False, filter_list=None, thresh=0.8):
+    if template_list is None or len(template_list) < 1:
+        return []
     if filter_list is None:
         filter_list = template_list
     tag_cood_tuple_list = []
@@ -121,7 +123,6 @@ def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False,
             bottom_right = (pt[0] + template.shape[1], pt[1] + template.shape[0])
             target_bbox = [pt[0], pt[1], bottom_right[0], bottom_right[1]]
             is_duplicate = False
-            print('###############')
             for old_tag in filter_list + tag_cood_tuple_list:
                 print(old_tag)
                 if bbox_IOU(old_tag[1], target_bbox) > 0.9:
@@ -129,7 +130,7 @@ def get_tag_cood_tuple_list(template_list: list, img_path: str, dump_flag=False,
                     break
             if not is_duplicate:  # 跳过重复的检测框
                 tag_cood_tuple_list.append([tag_name, target_bbox, 0])
-                print('match: [{}, {}]'.format(tag_name, target_bbox))
+                # print('match: [{}, {}]'.format(tag_name, target_bbox))
                 if dump_flag:
                     cv2.rectangle(img, pt, bottom_right, (0, 0, 255), 3)
         if dump_flag:

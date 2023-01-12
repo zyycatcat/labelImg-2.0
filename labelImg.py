@@ -129,7 +129,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         # Create a widget for edit and diffc button
         # self.diffcButton = QCheckBox(getStr('useDifficult'))
-        self.diffcButton = QCheckBox('用作模板匹配')
+        self.diffcButton = QCheckBox('将当前构件用作模板匹配')
         self.diffcButton.setChecked(False)
         self.diffcButton.stateChanged.connect(self.btnstate)
         self.editButton = QToolButton()
@@ -726,6 +726,8 @@ class MainWindow(QMainWindow, WindowMixin):
         template_list = []
         all_tag_list = []
         for i in range(self.labelList.count()):
+            if self.labelList.item(i).checkState() == 0:
+                continue
             shape: Shape = self.itemsToShapes[self.labelList.item(i)]
             xmax = ymax = 0
             xmin = self.image.width()
