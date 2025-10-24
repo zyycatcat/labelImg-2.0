@@ -360,6 +360,11 @@ class MainWindow(QMainWindow, WindowMixin):
         autoLabel = action('自动标注', self.autoLabel, 'Ctrl+M', 'edit', '使用模板匹配自动标注', enabled=True)
         self.autoLabelButton.setDefaultAction(autoLabel)
 
+        # 快捷键：选中同类（取第一个被选中的 item 的标签，勾选所有同标签项，取消勾选其他项）
+        selectSameClass = action('选中同类', self.selectSameClass, 'Ctrl+G', 'select_same', '勾选与当前选中第一个同类的所有项', enabled=True)
+        # 注册到主窗口以让快捷键生效
+        self.addAction(selectSameClass)
+
         shapeLineColor = action(getStr('shapeLineColor'), self.chshapeLineColor,
                                 icon='color_line', tip=getStr('shapeLineColorDetail'),
                                 enabled=False)
@@ -1133,6 +1138,31 @@ class MainWindow(QMainWindow, WindowMixin):
             self.setDirty()
         else:  # User probably changed item visibility
             self.canvas.setShapeVisible(shape, item.checkState() == Qt.Checked)
+
+    def selectSameClass(self):
+        """Select (check) all items that have the same label as the first selected item.
+
+        This will uncheck all other items.
+        Triggered by shortcut Ctrl+Shift+G.
+        """
+        # Get selected items in the QListWidget
+        sel = self.labelList.selectedItems()
+        if not sel:
+            QMessageBox.information(self, '选中同类', '请先选中一个构件（单击以选择）。')
+            return
+        first = sel[0]
+        target_label = first.text()
+        # Iterate all items and set check state
+        for i in range(self.labelList.count()):
+            it = self.labelList.item(i)
+            try:
+                if it.text() == target_label:
+                    it.setCheckState(Qt.Checked)
+                else:
+                    it.setCheckState(Qt.Unchecked)
+            except Exception:
+                # ignore unexpected errors per-item
+                pass
 
     # Callback functions:
     def newShape(self):
