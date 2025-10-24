@@ -9,9 +9,11 @@ import re
 import sys
 import subprocess
 import cv2
+import numpy as np
 
 from functools import partial
 from collections import defaultdict
+import numpy as np
 
 try:
     from PyQt5.QtGui import *
@@ -150,6 +152,22 @@ class MainWindow(QMainWindow, WindowMixin):
         self.threshLabel = QLabel('匹配算法阈值：0.8', self)
         self.matchThresh = 0.8      # 默认阈值0.8
 
+        # IoU 阈值滑块与搜索按钮（和上面的滑块风格一致）
+        self.iouSlider = QSlider(Qt.Horizontal, self)
+        self.iouSlider.setFixedSize(200, 20)
+        # 使用和上面相同的范围 [0.5, 1.0]（按用户要求“照搬上面的”）
+        self.iouSlider.setMinimum(50)
+        self.iouSlider.setMaximum(100)
+        self.iouSlider.setValue(50)
+        self.iouSlider.valueChanged[int].connect(self.iouSliderEvent)
+        self.iouLabel = QLabel('IoU 阈值：0.5', self)
+        self.iouThresh = 0.5  # 默认 IoU 阈值
+
+        # 搜索重合构件按钮
+        self.searchOverlapButton = QToolButton()
+        self.searchOverlapButton.setText('搜索重合构件')
+        self.searchOverlapButton.clicked.connect(self.searchOverlap)
+
         # Add some of widgets to listLayout
         listLayout.addWidget(self.editButton)
         listLayout.addWidget(self.autoLabelButton)
@@ -157,6 +175,10 @@ class MainWindow(QMainWindow, WindowMixin):
         listLayout.addWidget(self.angleButton)
         listLayout.addWidget(self.slider)
         listLayout.addWidget(self.threshLabel)
+        # IoU 搜索控件
+        listLayout.addWidget(self.iouSlider)
+        listLayout.addWidget(self.iouLabel)
+        listLayout.addWidget(self.searchOverlapButton)
         listLayout.addWidget(useDefaultLabelContainer)
 
         # Create and add combobox for showing unique labels in group
@@ -206,6 +228,7 @@ class MainWindow(QMainWindow, WindowMixin):
             Qt.Horizontal: scroll.horizontalScrollBar()
         }
         self.scrollArea = scroll
+        self.scrollArea.viewport().installEventFilter(self)
         self.canvas.scrollRequest.connect(self.scrollRequest)
 
         self.canvas.newShape.connect(self.newShape)
@@ -288,7 +311,10 @@ class MainWindow(QMainWindow, WindowMixin):
         hideAll = action('&Hide\nRectBox', partial(self.togglePolygons, False),
                          'Ctrl+H', 'hide', getStr('hideAllBoxDetail'),
                          enabled=False)
-        showAll = action('&Show\nRectBox', partial(self.togglePolygons, True),
+        # showAll = action('&Show\nRectBox', partial(self.togglePolygons, True),
+        #                  'Ctrl+A', 'hide', getStr('showAllBoxDetail'),
+        #                  enabled=False)
+        showAll = action('&Show\nRectBox', self.toggleSelectAll,
                          'Ctrl+A', 'hide', getStr('showAllBoxDetail'),
                          enabled=False)
 
@@ -522,7 +548,111 @@ class MainWindow(QMainWindow, WindowMixin):
         if event.key() == Qt.Key_Control:
             # Draw rectangle if Ctrl is pressed
             self.canvas.setDrawingShapeToSquare(True)
+            
+    def eventFilter(self, obj, event):
+        # 当按住 Shift 滚轮时，左右滑动图片
+        if event.type() == QEvent.Wheel and (event.modifiers() & Qt.ShiftModifier):
+            h_bar = self.scrollBars[Qt.Horizontal]
+            # angleDelta().y() 为垂直滚轮值；每格为 120
+            delta = event.angleDelta().x()
+            units = - delta / (8 * 15)
+            h_bar.setValue(int(h_bar.value() + h_bar.singleStep() * units))
+            return True
+        return super(MainWindow, self).eventFilter(obj, event)
 
+    def toggleSelectAll(self):
+            """
+            If any label item is unchecked -> check all.
+            If all are checked -> uncheck all.
+            """
+            count = self.labelList.count()
+            if count == 0:
+                return
+            any_unchecked = any(self.labelList.item(i).checkState() != Qt.Checked
+                                for i in range(count))
+            for i in range(count):
+                self.labelList.item(i).setCheckState(Qt.Checked if any_unchecked else Qt.Unchecked)
+
+    def selected_boxes_iou(self, thresh=0.5, require_all=True, return_pairs=False):
+        """
+        计算当前 labelList 中被勾选项的两两 IoU（向量化）。
+        参数:
+          thresh (float): IoU 阈值。
+          require_all (bool): True -> 仅当所有（i<j）对的 IoU >= thresh 时返回 True；
+                              False -> 只要存在任意一对 IoU >= thresh 即返回 True。
+          return_pairs (bool): True 时额外返回所有满足阈值的索引对列表。
+        返回:
+          (result_bool, iou_matrix, items)
+            result_bool: 根据 require_all/任意对 的判断结果
+            iou_matrix: n x n 对称矩阵（numpy），i==j 为 1.0
+            items: 被考虑的 QListWidgetItem 列表（顺序对应矩阵索引）
+        """
+        # 收集被选中的框
+        boxes = []
+        items = []
+        for i in range(self.labelList.count()):
+            it = self.labelList.item(i)
+            if it.checkState() == Qt.Checked:
+                shape = self.itemsToShapes.get(it)
+                if not shape:
+                    continue
+                xs = [p.x() for p in shape.points]
+                ys = [p.y() for p in shape.points]
+                if not xs or not ys:
+                    continue
+                xmin, ymin, xmax, ymax = min(xs), min(ys), max(xs), max(ys)
+                # 保证宽高非负
+                if xmax <= xmin or ymax <= ymin:
+                    # 零面积框也可保留但面积为0
+                    pass
+                boxes.append([xmin, ymin, xmax, ymax])
+                items.append(it)
+
+        n = len(boxes)
+        if n < 2:
+            # 少于两个框无法比较
+            iou_mat = np.eye(n)
+            return (False if n==2 else False), iou_mat, items
+
+        arr = np.array(boxes, dtype=float)  # (n,4)
+        x1 = arr[:, 0][:, None]
+        y1 = arr[:, 1][:, None]
+        x2 = arr[:, 2][:, None]
+        y2 = arr[:, 3][:, None]
+
+        xx1 = np.maximum(x1, x1.T)
+        yy1 = np.maximum(y1, y1.T)
+        xx2 = np.minimum(x2, x2.T)
+        yy2 = np.minimum(y2, y2.T)
+
+        inter_w = np.maximum(0.0, xx2 - xx1)
+        inter_h = np.maximum(0.0, yy2 - yy1)
+        inter = inter_w * inter_h
+
+        areas = np.maximum(0.0, (arr[:, 2] - arr[:, 0])) * np.maximum(0.0, (arr[:, 3] - arr[:, 1]))
+        union = areas[:, None] + areas[None, :] - inter
+        # 防止除以零
+        iou = inter / (union + 1e-12)
+        # 对角定义为 1.0
+        np.fill_diagonal(iou, 1.0)
+
+        # 只看上三角（i<j）用于判断
+        iu_tri = iou[np.triu_indices(n, k=1)]
+        if require_all:
+            result = np.all(iu_tri >= thresh)
+        else:
+            result = np.any(iu_tri >= thresh)
+
+        if return_pairs:
+            idx = np.triu_indices(n, k=1)
+            good = [(int(i), int(j)) for (i, j, v) in zip(idx[0], idx[1], iu_tri) if v >= thresh]
+            return result, iou, items, good
+
+        return result, iou, items
+    
+    def togglePolygons(self, value):
+        for item, shape in self.itemsToShapes.items():
+            item.setCheckState(Qt.Checked if value else Qt.Unchecked)
     ## Support Functions ##
     def set_format(self, save_format):
         if save_format == FORMAT_PASCALVOC:
@@ -602,6 +732,58 @@ class MainWindow(QMainWindow, WindowMixin):
     def sliderEvent(self, x):
         self.matchThresh = x / 100
         self.threshLabel.setText('匹配算法阈值：{}'.format(str(self.matchThresh)))
+
+    def iouSliderEvent(self, x):
+        """Handle IoU slider value change."""
+        self.iouThresh = x / 100
+        try:
+            self.iouLabel.setText('IoU 阈值：{}'.format(str(self.iouThresh)))
+        except Exception:
+            pass
+
+    def searchOverlap(self):
+        """Search selected list items for overlapping boxes by IoU.
+
+        Highlights overlapping items in red and shows a popup with counts.
+        """
+        # Ensure there are at least two selected/checked items
+        # Use the existing selected_boxes_iou helper
+        result, iou_mat, items, pairs = self.selected_boxes_iou(thresh=self.iouThresh, require_all=False, return_pairs=True)
+
+        if not items or len(items) < 2:
+            QMessageBox.information(self, '搜索重合构件', '请先勾选至少两个构件再搜索。')
+            return
+
+        if not pairs:
+            # Restore colors for all considered items
+            for it in items:
+                try:
+                    shape = self.itemsToShapes.get(it)
+                    it.setBackground(generateColorByText(shape.label))
+                except Exception:
+                    pass
+            QMessageBox.information(self, '搜索重合构件', '未发现 IoU >= {}'.format(self.iouThresh))
+            return
+
+        # pairs is list of (i,j) indices into items
+        overlapping_indices = set()
+        for i, j in pairs:
+            overlapping_indices.add(i)
+            overlapping_indices.add(j)
+
+        # Color overlapping items red; restore others
+        red = QColor(255, 0, 0)
+        for idx, it in enumerate(items):
+            if idx in overlapping_indices:
+                it.setBackground(red)
+            else:
+                try:
+                    shape = self.itemsToShapes.get(it)
+                    it.setBackground(generateColorByText(shape.label))
+                except Exception:
+                    pass
+
+        QMessageBox.information(self, '搜索重合构件', '找到重合构件数: {} (涉及 {} 个构件)'.format(len(pairs), len(overlapping_indices)))
 
     def queueEvent(self, function):
         QTimer.singleShot(0, function)
@@ -995,13 +1177,18 @@ class MainWindow(QMainWindow, WindowMixin):
     def scrollRequest(self, delta, orientation):
         units = - delta / (8 * 15)
         bar = self.scrollBars[orientation]
-        bar.setValue(bar.value() + bar.singleStep() * units)
+        # Make horizontal scrolling faster so one wheel tick moves more.
+        if orientation == Qt.Horizontal:
+            factor = 3.0  # increase this to move faster
+        else:
+            factor = 3.0
+        bar.setValue(int(bar.value() + bar.singleStep() * units * factor))
 
     def setZoom(self, value):
         self.actions.fitWidth.setChecked(False)
         self.actions.fitWindow.setChecked(False)
         self.zoomMode = self.MANUAL_ZOOM
-        self.zoomWidget.setValue(value)
+        self.zoomWidget.setValue(int(value))
 
     def addZoom(self, increment=10):
         self.setZoom(self.zoomWidget.value() + increment)
@@ -1055,8 +1242,8 @@ class MainWindow(QMainWindow, WindowMixin):
         new_h_bar_value = h_bar.value() + move_x * d_h_bar_max
         new_v_bar_value = v_bar.value() + move_y * d_v_bar_max
 
-        h_bar.setValue(new_h_bar_value)
-        v_bar.setValue(new_v_bar_value)
+        h_bar.setValue(int(new_h_bar_value))
+        v_bar.setValue(int(new_v_bar_value))
 
     def setFitWindow(self, value=True):
         if value:
