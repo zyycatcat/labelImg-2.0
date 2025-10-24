@@ -1695,6 +1695,9 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def saveFile(self, _value=False):
         if self.defaultSaveDir is not None and len(ustr(self.defaultSaveDir)):
+            if not os.path.exists(ustr(self.defaultSaveDir)):
+                QMessageBox.warning(self, '保存失败', '指定的保存文件夹不存在：\n{}'.format(self.defaultSaveDir))
+                return
             if self.filePath:
                 imgFileName = os.path.basename(self.filePath)
                 savedFileName = os.path.splitext(imgFileName)[0]
