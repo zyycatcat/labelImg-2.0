@@ -435,6 +435,13 @@ class MainWindow(QMainWindow, WindowMixin):
         self.displayLabelOption.setChecked(settings.get(SETTING_PAINT_LABEL, False))
         self.displayLabelOption.triggered.connect(self.togglePaintLabelsOption)
 
+        # 选项：点击列表项时自动放大并居中（用户可开/关）
+        self.autoCenterOnSelect = False
+        self.autoCenterOnSelectAction = QAction('点击列表项时自动放大并居中', self)
+        self.autoCenterOnSelectAction.setCheckable(True)
+        self.autoCenterOnSelectAction.setChecked(self.autoCenterOnSelect)
+        self.autoCenterOnSelectAction.triggered.connect(self.toggleAutoCenterOnSelect)
+
         addActions(self.menus.file,
                    (open, opendir, changeSavedir, openAnnotation, self.menus.recentFiles, save, save_format, saveAs, close, resetAll, deleteImg, quit))
         addActions(self.menus.help, (help, showInfo))
@@ -442,6 +449,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.autoSaving,
             self.singleClassMode,
             self.displayLabelOption,
+            self.autoCenterOnSelectAction,
             labels, advancedMode, None,
             hideAll, showAll, None,
             zoomIn, zoomOut, zoomOrg, None,
@@ -1128,6 +1136,13 @@ class MainWindow(QMainWindow, WindowMixin):
             shape = self.itemsToShapes[item]
             # Add Chris
             self.diffcButton.setChecked(shape.difficult)
+            # 当用户单击选择 list 中某项时（若已启用选项），放大并将该构件居中显示
+            try:
+                if getattr(self, 'autoCenterOnSelect', False):
+                    # 使用一个合理的默认放大倍率，例如 200%
+                    self.centerOnShape(shape, zoom_percent=200)
+            except Exception:
+                pass
 
     def labelItemChanged(self, item):
         shape = self.itemsToShapes[item]
@@ -1138,6 +1153,52 @@ class MainWindow(QMainWindow, WindowMixin):
             self.setDirty()
         else:  # User probably changed item visibility
             self.canvas.setShapeVisible(shape, item.checkState() == Qt.Checked)
+
+    def centerOnShape(self, shape, zoom_percent=200):
+        """Zoom to zoom_percent (percentage) and center the canvas viewport on the given shape.
+
+        zoom_percent: e.g. 200 for 200%%.
+        """
+        if not shape:
+            return
+        # Compute shape center in image coordinates
+        rect = shape.boundingRect()
+        cx = rect.x() + rect.width() / 2.0
+        cy = rect.y() + rect.height() / 2.0
+
+        # Set zoom
+        # Clamp zoom to a reasonable range
+        zoom_percent = max(10, min(500, int(zoom_percent)))
+        self.zoomWidget.setValue(int(zoom_percent))
+        # Repaint so canvas.scale and size are updated
+        self.paintCanvas()
+
+        # Compute scale and offsets
+        s = 0.01 * self.zoomWidget.value()
+        # offsetToCenter gives painter logical offset; widget coord = (coord + offset) * s
+        offset = self.canvas.offsetToCenter()
+
+        # Viewport size
+        viewport = self.scrollArea.viewport()
+        vw = viewport.width()
+        vh = viewport.height()
+
+        widget_x = (cx + offset.x()) * s
+        widget_y = (cy + offset.y()) * s
+
+        # Desired scrollbar values to center the point
+        h_bar = self.scrollBars[Qt.Horizontal]
+        v_bar = self.scrollBars[Qt.Vertical]
+
+        desired_h = int(widget_x - vw / 2)
+        desired_v = int(widget_y - vh / 2)
+
+        # Clamp to scrollbar range
+        desired_h = max(0, min(desired_h, h_bar.maximum()))
+        desired_v = max(0, min(desired_v, v_bar.maximum()))
+
+        h_bar.setValue(desired_h)
+        v_bar.setValue(desired_v)
 
     def selectSameClass(self):
         """Select (check) all items that have the same label as the first selected item.
@@ -1163,6 +1224,18 @@ class MainWindow(QMainWindow, WindowMixin):
             except Exception:
                 # ignore unexpected errors per-item
                 pass
+
+    def toggleAutoCenterOnSelect(self, checked):
+        """Toggle whether selecting a list item auto-centers and zooms the shape."""
+        # QAction.triggered sends checked state for checkable actions
+        try:
+            # If called with a QAction object, convert accordingly
+            if isinstance(checked, QAction):
+                self.autoCenterOnSelect = checked.isChecked()
+            else:
+                self.autoCenterOnSelect = bool(checked)
+        except Exception:
+            self.autoCenterOnSelect = bool(checked)
 
     # Callback functions:
     def newShape(self):
