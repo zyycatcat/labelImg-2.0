@@ -455,6 +455,20 @@ class MainWindow(QMainWindow, WindowMixin):
             zoomIn, zoomOut, zoomOrg, None,
             fitWindow, fitWidth))
 
+        # Auto-save timer: every 10 seconds check whether we should auto-save.
+        # It only performs an automatic save when the Auto Save option is enabled,
+        # there are unsaved changes (self.dirty), and a default save directory is set.
+        # We intentionally avoid popping dialogs during autosave (e.g. when no
+        # default save dir is configured) to prevent interrupting the user.
+        try:
+            self._autosave_timer = QTimer(self)
+            self._autosave_timer.setInterval(30000)  # 30 seconds
+            self._autosave_timer.timeout.connect(self._autosave)
+            self._autosave_timer.start()
+        except Exception:
+            # In case QTimer is not available for some reason, silently skip.
+            pass
+
         self.menus.file.aboutToShow.connect(self.updateFileMenu)
 
         # Custom context menu for the canvas widget:
@@ -1710,6 +1724,40 @@ class MainWindow(QMainWindow, WindowMixin):
             savedPath = os.path.join(imgFileDir, savedFileName)
             self._saveFile(savedPath if self.labelFile
                            else self.saveFileDialog(removeExt=False))
+
+    def _autosave(self):
+        """Called by the internal QTimer every 10 seconds.
+
+        Autosave behavior:
+        - Only act if the Auto Save action is checked (self.autoSaving)
+        - Only save when there are unsaved changes (self.dirty == True)
+        - Only perform save when a default save directory is configured to avoid
+          popping file dialogs during background autosave.
+        """
+        try:
+            # If action doesn't exist yet or is unchecked, skip
+            if not hasattr(self, 'autoSaving') or not self.autoSaving.isChecked():
+                return
+
+            # Nothing to do when clean
+            if not getattr(self, 'dirty', False):
+                return
+
+            # Require a configured default save dir to avoid UI dialogs
+            if not self.defaultSaveDir:
+                # Skip autosave — user must configure default save directory
+                return
+
+            # If default dir doesn't actually exist, skip
+            if not os.path.exists(ustr(self.defaultSaveDir)):
+                return
+
+            # Perform the save. saveFile handles constructing the filename.
+            # Use a try/except to avoid timer crashes on unexpected errors.
+            self.saveFile()
+        except Exception as e:
+            # Don't raise — just log to stdout so user can inspect if needed.
+            print('Auto-save failed: %r' % (e,))
 
     def saveFileAs(self, _value=False):
         assert not self.image.isNull(), "cannot save empty image"
