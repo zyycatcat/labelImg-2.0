@@ -62,6 +62,8 @@ class Canvas(QWidget):
         self.setFocusPolicy(Qt.WheelFocus)
         self.verified = False
         self.drawSquare = False
+        # 临时显示的优化框（用于智能吸附预览）
+        self.previewOptimizedBbox = None  # [xmin, ymin, xmax, ymax] 或 None
 
     def setDrawingColor(self, qColor):
         self.drawingLineColor = qColor
@@ -231,6 +233,7 @@ class Canvas(QWidget):
             self.selectShapePoint(pos)
             self.prevPoint = pos
             self.repaint()
+
 
     def mouseReleaseEvent(self, ev):
         if ev.button() == Qt.RightButton:
@@ -485,6 +488,18 @@ class Canvas(QWidget):
             p.drawLine(int(self.prevPoint.x()), 0, int(self.prevPoint.x()), int(self.pixmap.height()))
             p.drawLine(0, int(self.prevPoint.y()), int(self.pixmap.width()), int(self.prevPoint.y()))
 
+        # 绘制智能吸附优化后的预览框（虚线）
+        if self.previewOptimizedBbox is not None:
+            x1, y1, x2, y2 = self.previewOptimizedBbox
+            # 创建虚线画笔
+            pen = QPen(QColor(255, 165, 0, 255))  # 橙色虚线
+            pen.setWidth(max(1, int(round(3.0 / self.scale))))
+            pen.setStyle(Qt.DashLine)
+            p.setPen(pen)
+            p.setBrush(Qt.NoBrush)
+            # 绘制矩形
+            p.drawRect(int(x1), int(y1), int(x2 - x1), int(y2 - y1))
+
         self.setAutoFillBackground(True)
         if self.verified:
             pal = self.palette()
@@ -685,7 +700,22 @@ class Canvas(QWidget):
     def resetState(self):
         self.restoreCursor()
         self.pixmap = None
+        self.previewOptimizedBbox = None
         self.update()
 
     def setDrawingShapeToSquare(self, status):
         self.drawSquare = status
+    
+    def setPreviewOptimizedBbox(self, bbox):
+        """设置要显示的优化后预览框
+        
+        参数:
+            bbox: [xmin, ymin, xmax, ymax] 或 None（清除预览）
+        """
+        self.previewOptimizedBbox = bbox
+        self.update()
+    
+    def clearPreviewOptimizedBbox(self):
+        """清除预览框"""
+        self.previewOptimizedBbox = None
+        self.update()

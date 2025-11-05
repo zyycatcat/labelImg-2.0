@@ -13,7 +13,6 @@ import numpy as np
 
 from functools import partial
 from collections import defaultdict
-import numpy as np
 
 try:
     from PyQt5.QtGui import *
@@ -168,6 +167,30 @@ class MainWindow(QMainWindow, WindowMixin):
         self.searchOverlapButton.setText('搜索重合构件')
         self.searchOverlapButton.clicked.connect(self.searchOverlap)
 
+        # 智能吸附算法选择下拉框
+        smartSnapMethodLabel = QLabel('智能吸附算法:', self)
+        self.smartSnapMethodCombo = QComboBox(self)
+        self.smartSnapMethodCombo.addItems([
+            'SAM（深度学习）',
+            '自适应阈值',
+            '轮廓检测',
+            'Otsu阈值',
+            'Canny边缘检测',
+            'GrabCut'
+        ])
+        # 设置默认值
+        saved_method = settings.get(SETTING_SMART_SNAP_METHOD, 'sam')
+        method_map = {
+            'sam': 0,
+            'adaptive': 1,
+            'contour': 2,
+            'otsu': 3,
+            'canny': 4,
+            'grabcut': 5
+        }
+        self.smartSnapMethodCombo.setCurrentIndex(method_map.get(saved_method, 0))
+        self.smartSnapMethodCombo.currentIndexChanged.connect(self.onSmartSnapMethodChanged)
+
         # Add some of widgets to listLayout
         listLayout.addWidget(self.editButton)
         listLayout.addWidget(self.autoLabelButton)
@@ -180,6 +203,9 @@ class MainWindow(QMainWindow, WindowMixin):
         listLayout.addWidget(self.iouLabel)
         listLayout.addWidget(self.searchOverlapButton)
         listLayout.addWidget(useDefaultLabelContainer)
+        # 智能吸附算法选择
+        listLayout.addWidget(smartSnapMethodLabel)
+        listLayout.addWidget(self.smartSnapMethodCombo)
 
         # Create and add combobox for showing unique labels in group
         self.comboBox = ComboBox(self)
@@ -303,6 +329,10 @@ class MainWindow(QMainWindow, WindowMixin):
         copy = action(getStr('dupBox'), self.copySelectedShape,
                       'Ctrl+D', 'copy', getStr('dupBoxDetail'),
                       enabled=False)
+        
+        # 智能吸附动作（右键菜单）
+        smartSnap = action('智能吸附优化', self.smartSnapCurrentShape, 
+                          None, None, '对选中的矩形框进行智能吸附优化', enabled=True)
 
         advancedMode = action(getStr('advancedMode'), self.toggleAdvancedMode,
                               'Ctrl+Shift+A', 'expert', getStr('advancedModeDetail'),
@@ -403,9 +433,9 @@ class MainWindow(QMainWindow, WindowMixin):
                               beginner=(), advanced=(),
                               editMenu=(edit, copy, delete,
                                         None, color1, self.drawSquaresOption),
-                              beginnerContext=(create, edit, copy, delete),
+                              beginnerContext=(create, edit, copy, delete, None, smartSnap),
                               advancedContext=(createMode, editMode, edit, copy,
-                                               delete, shapeLineColor, shapeFillColor),
+                                               delete, shapeLineColor, shapeFillColor, None, smartSnap),
                               onLoadActive=(
                                   close, create, createMode, editMode),
                               onShapesPresent=(saveAs, hideAll, showAll))
@@ -442,6 +472,15 @@ class MainWindow(QMainWindow, WindowMixin):
         self.autoCenterOnSelectAction.setChecked(self.autoCenterOnSelect)
         self.autoCenterOnSelectAction.triggered.connect(self.toggleAutoCenterOnSelect)
 
+        # 智能吸附功能选项
+        self.smartSnapEnabled = settings.get(SETTING_SMART_SNAP, True)
+        self.smartSnapAutoAccept = settings.get(SETTING_SMART_SNAP_AUTO_ACCEPT, False)
+        self.smartSnapMethod = settings.get(SETTING_SMART_SNAP_METHOD, 'auto')
+        self.smartSnapAction = QAction('启用智能吸附', self)
+        self.smartSnapAction.setCheckable(True)
+        self.smartSnapAction.setChecked(self.smartSnapEnabled)
+        self.smartSnapAction.triggered.connect(self.toggleSmartSnap)
+
         addActions(self.menus.file,
                    (open, opendir, changeSavedir, openAnnotation, self.menus.recentFiles, save, save_format, saveAs, close, resetAll, deleteImg, quit))
         addActions(self.menus.help, (help, showInfo))
@@ -450,6 +489,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.singleClassMode,
             self.displayLabelOption,
             self.autoCenterOnSelectAction,
+            self.smartSnapAction,
             labels, advancedMode, None,
             hideAll, showAll, None,
             zoomIn, zoomOut, zoomOrg, None,
@@ -1251,6 +1291,148 @@ class MainWindow(QMainWindow, WindowMixin):
         except Exception:
             self.autoCenterOnSelect = bool(checked)
 
+    def toggleSmartSnap(self, checked):
+        """Toggle smart snap feature."""
+        try:
+            if isinstance(checked, QAction):
+                self.smartSnapEnabled = checked.isChecked()
+            else:
+                self.smartSnapEnabled = bool(checked)
+        except Exception:
+            self.smartSnapEnabled = bool(checked)
+    
+    def onSmartSnapMethodChanged(self, index):
+        """处理智能吸附算法选择变化"""
+        method_map = {
+            0: 'sam',       # SAM（深度学习）
+            1: 'adaptive',  # 自适应阈值
+            2: 'contour',   # 轮廓检测
+            3: 'otsu',      # Otsu阈值
+            4: 'canny',     # Canny边缘检测
+            5: 'grabcut'    # GrabCut
+        }
+        self.smartSnapMethod = method_map.get(index, 'sam')
+        self.status(f"智能吸附算法已切换为: {self.smartSnapMethodCombo.currentText()}")
+
+    def smartSnapCurrentShape(self):
+        """
+        对当前选中的矩形框进行智能吸附优化（从右键菜单或快捷键调用）
+        """
+        if not self.canvas.selectedShape:
+            self.status("请先选择一个矩形框")
+            return
+        self.trySmartSnapForShape(self.canvas.selectedShape)
+    
+    def trySmartSnapForShape(self, shape):
+        """
+        对指定的矩形框进行智能吸附优化（公开方法，供 canvas 调用）
+        
+        参数:
+            shape: 要优化的 Shape 对象
+        """
+        if not self.smartSnapEnabled:
+            self.status("智能吸附功能未启用，请在菜单中勾选'启用智能吸附'")
+            return
+        if not self.filePath:
+            self.status("请先打开一张图片")
+            return
+        
+        self._trySmartSnap(shape)
+    
+    def _trySmartSnap(self, shape=None):
+        """尝试对矩形框进行智能吸附优化"""
+        try:
+            # 如果没有指定shape，使用最后一个shape
+            if shape is None:
+                if not self.canvas.shapes or len(self.canvas.shapes) == 0:
+                    return
+                shape = self.canvas.shapes[-1]
+            
+            if not shape or len(shape.points) < 4:
+                return
+            
+            # 计算原始矩形框坐标
+            xs = [p.x() for p in shape.points]
+            ys = [p.y() for p in shape.points]
+            if not xs or not ys:
+                return
+            
+            original_bbox = [min(xs), min(ys), max(xs), max(ys)]
+            
+            # 检查矩形框是否太小（小于10x10的框可能不适合检测）
+            if (original_bbox[2] - original_bbox[0]) < 10 or (original_bbox[3] - original_bbox[1]) < 10:
+                return
+            
+            # 调用智能吸附检测（使用用户选择的算法）
+            from libs.smart_snap import try_multiple_methods
+            
+            # 获取用户选择的算法
+            preferred_method = self.smartSnapMethod if hasattr(self, 'smartSnapMethod') else 'auto'
+            
+            self.status("正在进行智能吸附检测... (算法: {})".format(
+                self.smartSnapMethodCombo.currentText() if hasattr(self, 'smartSnapMethodCombo') else preferred_method
+            ))
+            # 使用用户选择的算法或自动选择
+            optimized_bbox, method = try_multiple_methods(
+                self.filePath, original_bbox, 
+                use_sam_if_available=True,
+                preferred_method=preferred_method
+            )
+            
+            if optimized_bbox is None:
+                # 检测失败，保持原框
+                self.status("智能吸附未找到更好的边界")
+                return
+            
+            # 在画布上显示优化后的预览框（橙色虚线）
+            self.canvas.setPreviewOptimizedBbox(optimized_bbox)
+            # 刷新画布以显示预览框
+            self.canvas.update()
+            QApplication.processEvents()  # 立即刷新界面
+            
+            # 显示简单的确认对话框
+            if not self.smartSnapAutoAccept:
+                reply = QMessageBox.question(
+                    self,
+                    '智能吸附优化',
+                    '检测到构件边界，是否接受本次优化？\n\n'
+                    '（橙色虚线框为优化后的矩形框）',
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                # 清除预览框
+                self.canvas.clearPreviewOptimizedBbox()
+                
+                if reply != QMessageBox.Yes:
+                    # 用户拒绝，保持原框
+                    self.status("已保持原始矩形框")
+                    return
+            else:
+                # 自动接受模式，直接清除预览框
+                self.canvas.clearPreviewOptimizedBbox()
+            
+            # 接受优化，更新矩形框
+            new_x1, new_y1, new_x2, new_y2 = optimized_bbox
+            
+            # 更新shape的四个点
+            shape.points = [
+                QPointF(new_x1, new_y1),
+                QPointF(new_x2, new_y1),
+                QPointF(new_x2, new_y2),
+                QPointF(new_x1, new_y2)
+            ]
+            
+            # 刷新画布
+            self.canvas.update()
+            self.status("已应用智能吸附优化 (方法: {})".format(method or "unknown"))
+            
+        except Exception as e:
+            print(f"智能吸附失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self.status("智能吸附失败，使用原始框")
+
     # Callback functions:
     def newShape(self):
         """Pop-up and give focus to the label editor.
@@ -1541,6 +1723,9 @@ class MainWindow(QMainWindow, WindowMixin):
         settings[SETTING_PAINT_LABEL] = self.displayLabelOption.isChecked()
         settings[SETTING_DRAW_SQUARE] = self.drawSquaresOption.isChecked()
         settings[SETTING_LABEL_FILE_FORMAT] = self.labelFileFormat
+        settings[SETTING_SMART_SNAP] = self.smartSnapEnabled
+        settings[SETTING_SMART_SNAP_AUTO_ACCEPT] = self.smartSnapAutoAccept
+        settings[SETTING_SMART_SNAP_METHOD] = self.smartSnapMethod if hasattr(self, 'smartSnapMethod') else 'auto'
         settings.save()
 
     def loadRecent(self, filename):

@@ -16,4 +16,7 @@ FORMAT_PASCALVOC='PascalVOC'
 FORMAT_YOLO='YOLO'
 SETTING_DRAW_SQUARE = 'draw/square'
 SETTING_LABEL_FILE_FORMAT= 'labelFileFormat'
+SETTING_SMART_SNAP = 'smartSnap'  # 智能吸附功能开关
+SETTING_SMART_SNAP_AUTO_ACCEPT = 'smartSnapAutoAccept'  # 是否自动接受优化
+SETTING_SMART_SNAP_METHOD = 'smartSnapMethod'  # 智能吸附算法选择
 DEFAULT_ENCODING = 'utf-8'
