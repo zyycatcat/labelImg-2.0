@@ -171,22 +171,17 @@ class MainWindow(QMainWindow, WindowMixin):
         smartSnapMethodLabel = QLabel('智能吸附算法:', self)
         self.smartSnapMethodCombo = QComboBox(self)
         self.smartSnapMethodCombo.addItems([
-            'SAM（深度学习）',
-            '自适应阈值',
-            '轮廓检测',
-            'Otsu阈值',
-            'Canny边缘检测',
-            'GrabCut'
+            'CV快速处理',
+            'SAM推理'
         ])
-        # 设置默认值
-        saved_method = settings.get(SETTING_SMART_SNAP_METHOD, 'sam')
+        # 设置默认值（默认使用CV快速处理）
+        saved_method = settings.get(SETTING_SMART_SNAP_METHOD, 'cv')
         method_map = {
-            'sam': 0,
-            'adaptive': 1,
-            'contour': 2,
-            'otsu': 3,
-            'canny': 4,
-            'grabcut': 5
+            'cv': 0,      # CV快速处理
+            'sam': 1,     # SAM推理
+            # 兼容旧配置
+            'engineering': 0,
+            'auto': 0
         }
         self.smartSnapMethodCombo.setCurrentIndex(method_map.get(saved_method, 0))
         self.smartSnapMethodCombo.currentIndexChanged.connect(self.onSmartSnapMethodChanged)
@@ -1304,14 +1299,10 @@ class MainWindow(QMainWindow, WindowMixin):
     def onSmartSnapMethodChanged(self, index):
         """处理智能吸附算法选择变化"""
         method_map = {
-            0: 'sam',       # SAM（深度学习）
-            1: 'adaptive',  # 自适应阈值
-            2: 'contour',   # 轮廓检测
-            3: 'otsu',      # Otsu阈值
-            4: 'canny',     # Canny边缘检测
-            5: 'grabcut'    # GrabCut
+            0: 'cv',   # CV快速处理
+            1: 'sam'   # SAM推理
         }
-        self.smartSnapMethod = method_map.get(index, 'sam')
+        self.smartSnapMethod = method_map.get(index, 'cv')
         self.status(f"智能吸附算法已切换为: {self.smartSnapMethodCombo.currentText()}")
 
     def smartSnapCurrentShape(self):
